@@ -1,1 +1,198 @@
-.
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football Team</title>
+<style>
+:root{--bg:#ffffff;--card:#f9fafb;--accent:#0ea5a4;--muted:#475569;--text:#0f172a}
+*{box-sizing:border-box;font-family:Inter, Roboto, Arial, sans-serif}
+body{margin:0;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.app{width:100%;max-width:820px}
+header{text-align:center;margin-bottom:18px}
+header h1{font-size:22px;margin:0;font-weight:800}
+.card{background:var(--card);border:1px solid #e2e8f0;padding:18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+input{width:100%;padding:10px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:var(--text)}
+button{padding:10px 12px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+.small{padding:6px 8px;font-size:13px}
+.profile{display:flex;gap:12px;align-items:center;padding:12px;border-radius:10px;background:#fff;border:1px solid #e2e8f0;margin-top:12px}
+.avatar{width:72px;height:72px;border-radius:10px;overflow:hidden;flex-shrink:0;background:#e2e8f0;display:flex;align-items:center;justify-content:center}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.info{flex:1}
+.meta{font-size:13px;color:var(--muted);margin-top:6px}
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)}
+.modal.show{display:flex}
+.modal-content{width:100%;max-width:420px;background:#fff;color:var(--text)}
+</style>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-database-compat.js"></script>
+</head>
+<body>
+<div class="app">
+  <header><h1>Football Team</h1></header>
+  <main class="card">
+    <label for="name">Введите имя (Omer, Mustafa, Maqa, Qusi или Boss)</label>
+    <input id="name" autocomplete="off" />
+    <div id="passwordBlock" style="display:none;margin-top:10px">
+      <label for="password">Пароль</label>
+      <input id="password" type="password" placeholder="Пароль для Boss" />
+    </div>
+    <div style="margin-top:10px">
+      <button id="loginBtn">Войти</button>
+    </div>
+    <div id="message" style="margin-top:10px;color:#dc2626;font-size:13px"></div>
+    <div id="profileArea"></div>
+    <div id="bossControls" style="margin-top:10px;display:none">
+      <button id="addPlayerBtn">Добавить нового игрока</button>
+    </div>
+  </main>
+
+  <!-- Редактирование игрока -->
+  <div id="editModal" class="modal" role="dialog" aria-modal="true">
+    <div class="modal-content card">
+      <h3>Редактировать игрока</h3>
+      <label for="editName">Имя</label><input id="editName" />
+      <label for="editLevel">Уровень</label><input id="editLevel" type="number" />
+      <label for="editRating">Рейтинг</label><input id="editRating" type="number" />
+      <label for="editCost">Стоимость</label><input id="editCost" />
+      <label for="editPosition">Позиция</label><input id="editPosition" />
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+        <button id="saveBtn">Сохранить</button>
+        <button id="closeBtn" class="small">Отмена</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCjU5IXSv39mbyeQKJav3zESc_FqjB-IVs",
+  authDomain: "futboll-team.firebaseapp.com",
+  databaseURL: "https://futboll-team-default-rtdb.firebaseio.com",
+  projectId: "futboll-team",
+  storageBucket: "futboll-team.appspot.com",
+  messagingSenderId: "827332819811",
+  appId: "1:827332819811:web:133e00c2e4a955c56f7156",
+  measurementId: "G-JRLCS2032E"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const $ = id=>document.getElementById(id);
+const profileArea = $('profileArea');
+const messageEl = $('message');
+const passwordBlock = $('passwordBlock');
+const bossControls = $('bossControls');
+
+let profiles = {};
+let bossMode = false;
+let currentTarget = null;
+let loaded = false;
+
+// Загрузка данных из Firebase
+db.ref('players').on('value', snapshot=>{
+  profiles = snapshot.val() || {};
+  loaded = true;
+  if(bossMode) renderBossPanel();
+  else if(currentTarget) renderPlayer(currentTarget);
+});
+
+$('name').addEventListener('input', ()=>{$('name').value.trim().toLowerCase()==='boss'?passwordBlock.style.display='block':passwordBlock.style.display='none'});
+
+$('loginBtn').addEventListener('click', ()=>{
+  if(!loaded){messageEl.textContent='Данные ещё загружаются…'; return;}
+  const name = $('name').value.trim();
+  if(!name){messageEl.textContent='Введите имя.'; return;}
+
+  if(name.toLowerCase()==='boss'){
+    if($('password').value.trim()!=='8181'){messageEl.textContent='Неверный пароль.'; return;}
+    bossMode=true;
+    bossControls.style.display='block';
+    renderBossPanel();
+    messageEl.textContent='';
+  } else {
+    if(!profiles[name]){messageEl.textContent='Профиль не найден.'; return;}
+    bossMode=false;
+    bossControls.style.display='none';
+    currentTarget=name;
+    renderPlayer(name);
+    messageEl.textContent='';
+  }
+});
+
+function renderPlayer(name){
+  const p = profiles[name];
+  profileArea.innerHTML=`
+    <div class="profile">
+      <div class="avatar">${p.photo?`<img src="${p.photo}" alt="${p.name}">`:''}</div>
+      <div class="info">
+        <div style="font-weight:700">${p.name}</div>
+        <div class="meta">Уровень: <strong>${p.level}</strong></div>
+        <div class="meta">Стоимость: <strong>${p.cost}</strong></div>
+        <div class="meta">Позиция: <strong>${p.position}</strong></div>
+        <div class="meta">Рейтинг: <strong>${p.rating}</strong></div>
+      </div>
+    </div>`;
+}
+
+function renderBossPanel(){
+  profileArea.innerHTML='';
+  Object.values(profiles).forEach(p=>{
+    const card=document.createElement('div'); card.className='profile';
+    card.innerHTML=`
+      <div class="avatar">${p.photo?`<img src="${p.photo}" alt="${p.name}">`:''}</div>
+      <div class="info">
+        <div style="font-weight:700">${p.name}</div>
+        <div class="meta">Уровень: <strong>${p.level}</strong> · Стоимость: <strong>${p.cost}</strong> · Позиция: <strong>${p.position}</strong></div>
+        <div class="meta">Рейтинг: <strong>${p.rating}</strong></div>
+      </div>
+      <div><button class="small" onclick="editPlayer('${p.name}')">Изм.</button></div>`;
+    profileArea.appendChild(card);
+  });
+}
+
+// Редактирование
+function editPlayer(name){
+  currentTarget=name;
+  const p=profiles[name];
+  $('editName').value=p.name;
+  $('editLevel').value=p.level;
+  $('editRating').value=p.rating;
+  $('editCost').value=p.cost;
+  $('editPosition').value=p.position;
+  $('editModal').classList.add('show');
+}
+
+$('closeBtn').addEventListener('click',()=>$('editModal').classList.remove('show'));
+
+$('saveBtn').addEventListener('click',()=>{
+  if(!currentTarget) return;
+  const p = {
+    name: $('editName').value.trim() || currentTarget,
+    level: Number($('editLevel').value) || 1,
+    rating: Number($('editRating').value) || 0,
+    cost: $('editCost').value || '0€',
+    position: $('editPosition').value || 'Unknown',
+    photo: profiles[currentTarget]?.photo || ''
+  };
+  profiles[currentTarget] = p;
+  db.ref('players/'+currentTarget).set(p);
+  $('editModal').classList.remove('show');
+});
+
+// Добавление нового игрока
+$('addPlayerBtn').addEventListener('click',()=>{
+  currentTarget = 'new'+Date.now();
+  $('editName').value='';
+  $('editLevel').value=1;
+  $('editRating').value=0;
+  $('editCost').value='0€';
+  $('editPosition').value='Unknown';
+  $('editModal').classList.add('show');
+});
+</script>
+</body>
+</html>
